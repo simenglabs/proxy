@@ -124,7 +124,7 @@
 						<tr>
 							<td><code>random</code><span class="in">query</span></td>
 							<td class="muted">flag</td>
-							<td>Acak urutan, untuk rotasi proxy.</td>
+							<td>Ambil acak dari 20 proxy terbaru yang cocok filter, untuk rotasi. Hasil maksimal 20.</td>
 							<td>
 								<label class="check"><input type="checkbox" bind:checked={random} /> acak</label>
 							</td>

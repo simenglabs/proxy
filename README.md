@@ -67,7 +67,7 @@ Ganti `/usr/bin/node` dengan hasil `which node`. Update kode: `git pull`.
 | `check_website` | `instagram`, `x`, `threads`, `youtube`, `tiktok`. Hasil cek terakhir, urut latency. |
 | `negara` | Kode ISO-2, mis. `ID`, `SG`. |
 | `limit` | Default 100, maks 1000. |
-| `random` | Acak urutan (rotasi). |
+| `random` | Ambil acak dari 20 proxy terbaru (yang cocok filter). |
 | `format` | `json` (default) atau `txt` (satu proxy per baris). |
 
 ```sh

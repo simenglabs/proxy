@@ -8,9 +8,11 @@ import type { RequestHandler } from './$types';
  * - check_website: only proxies that reached this site on last check (sorted by its latency). Alias: site
  * - negara: ISO-2 country code, e.g. ID, SG
  * - limit:  max rows (default 100, max 1000)
- * - random: shuffle instead of sort (rotation)
+ * - random: shuffle the RANDOM_POOL newest matches (by created_at) instead of sorting (rotation)
  * - format: json (default) | txt (one protocol://ip:port per line)
  */
+const RANDOM_POOL = 20;
+
 export const GET: RequestHandler = async ({ url }) => {
 	const site = (url.searchParams.get('check_website') || url.searchParams.get('site') || '').trim().toLowerCase();
 	if (site && !(site in SITES)) error(400, `check_website must be one of: ${Object.keys(SITES).join(', ')}`);
@@ -20,13 +22,16 @@ export const GET: RequestHandler = async ({ url }) => {
 
 	// site is whitelisted above, safe to inline into the JSON path
 	const latency = site ? `json_extract(sites, '$.${site}')` : 'NULL';
-	const order = url.searchParams.has('random') ? 'random()' : site ? latency : 'last_ok DESC';
+	const random = url.searchParams.has('random');
+	const where = `WHERE alive = 1 ${site ? `AND ${latency} IS NOT NULL` : ''} ${negara ? 'AND country = ?' : ''}`;
+	const cols = `id, country, anonymity, sites, ${latency} AS latency`;
 
 	await ready();
 	const { rows } = await db.execute({
-		sql: `SELECT id, country, anonymity, sites, ${latency} AS latency FROM proxies
-			WHERE alive = 1 ${site ? `AND ${latency} IS NOT NULL` : ''} ${negara ? 'AND country = ?' : ''}
-			ORDER BY ${order} LIMIT ?`,
+		sql: random
+			? `SELECT * FROM (SELECT ${cols} FROM proxies ${where} ORDER BY created_at DESC LIMIT ${RANDOM_POOL})
+				ORDER BY random() LIMIT ?`
+			: `SELECT ${cols} FROM proxies ${where} ORDER BY ${site ? latency : 'last_ok DESC'} LIMIT ?`,
 		args: [...(negara ? [negara] : []), limit]
 	});
 
