@@ -1,11 +1,9 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
-	import { SvelteSet } from 'svelte/reactivity';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
-	const pending = new SvelteSet<string>();
 
 	const href = (page: number, alive = data.aliveOnly) => {
 		const q = new URLSearchParams();
@@ -36,14 +34,6 @@
 	// ponytail: fixed thresholds, tune if target sites differ a lot in baseline latency
 	const speed = (ms: number | null | undefined) =>
 		ms == null ? 'bad' : ms < 3000 ? 'ok' : 'warn';
-
-	const testing = (id: string) => () => {
-		pending.add(id);
-		return async ({ update }: { update: (o?: { reset?: boolean }) => Promise<void> }) => {
-			await update({ reset: false });
-			pending.delete(id);
-		};
-	};
 </script>
 
 {#snippet latency(ms: number | null | undefined)}
@@ -54,7 +44,7 @@
 	<header>
 		<div>
 			<h1>Proxy Monitor</h1>
-			<p class="sub">Cek otomatis tiap siklus · halaman refresh tiap 20 detik</p>
+			<p class="sub">Dicek otomatis oleh GitHub Actions · halaman refresh tiap 20 detik</p>
 		</div>
 		<span class="live" class:on={data.status.running} aria-live="polite">
 			<span class="dot"></span>{data.status.running ? 'Scheduler jalan' : 'Idle'}
@@ -82,46 +72,25 @@
 	{#if last?.error}<p class="alert">Run terakhir error: {last.error}</p>{/if}
 
 	<section class="toolbar">
-		<form class="test" method="POST" action="?/test" use:enhance={testing('manual')}>
-			<label for="proxy-input" class="sr-only">Proxy untuk dites</label>
-			<input
-				id="proxy-input"
-				name="id"
-				placeholder="socks5://1.2.3.4:1080"
-				value={form?.id ?? ''}
-				autocomplete="off"
-				spellcheck="false"
-				required
-			/>
-			<button class="btn" disabled={pending.has('manual')}>
-				{pending.has('manual') ? 'Testing…' : 'Test proxy'}
-			</button>
-		</form>
-
 		<div class="right">
 			<div class="seg" role="group" aria-label="Filter">
 				<a href={href(1, false)} aria-current={!data.aliveOnly ? 'true' : undefined}>Semua</a>
 				<a href={href(1, true)} aria-current={data.aliveOnly ? 'true' : undefined}>Aktif saja</a>
 			</div>
-			<form method="POST" action="?/run" use:enhance>
-				<button class="btn primary" disabled={data.status.running}>
-					{data.status.running ? 'Berjalan…' : 'Run sekarang'}
-				</button>
-			</form>
+			{#if data.canRun}
+				<form method="POST" action="?/run" use:enhance>
+					<button class="btn primary" disabled={data.status.running}>
+						{data.status.running ? 'Berjalan…' : 'Run sekarang'}
+					</button>
+				</form>
+			{/if}
 		</div>
 	</section>
 
 	{#if form && 'error' in form}
 		<p class="alert" role="alert">{form.error}</p>
-	{:else if form?.sites}
-		{@const res = form.sites}
-		<div class="result" class:dead={!form.alive} role="status">
-			<code>{form.id}</code>
-			<div class="pills">
-				{#each data.sites as s (s)}<span class="site">{s} {@render latency(res[s])}</span>{/each}
-			</div>
-			<span class="note">{form.alive ? 'Aktif · disimpan' : 'Mati · tidak disimpan'}</span>
-		</div>
+	{:else if form?.started}
+		<p class="info" role="status">Run dipicu. GitHub Actions butuh ±30 detik untuk mulai.</p>
 	{/if}
 
 	<div class="card">
@@ -131,7 +100,7 @@
 					<tr>
 						<th>Proxy</th><th>Negara</th><th>Anonimitas</th>
 						{#each data.sites as s (s)}<th>{s}</th>{/each}
-						<th>Status</th><th>Ditambahkan</th><th>Dicek</th><th>OK terakhir</th><th><span class="sr-only">Aksi</span></th>
+						<th>Status</th><th>Ditambahkan</th><th>Dicek</th><th>OK terakhir</th>
 					</tr>
 				</thead>
 				<tbody>
@@ -147,18 +116,10 @@
 							<td class="muted num">{ago(p.createdAt)}</td>
 							<td class="muted num">{ago(p.lastChecked)}</td>
 							<td class="muted num">{ago(p.lastOk)}</td>
-							<td>
-								<form method="POST" action="?/test" use:enhance={testing(p.id)}>
-									<input type="hidden" name="id" value={p.id} />
-									<button class="btn sm" disabled={pending.has(p.id)} aria-label="Test ulang {p.id}">
-										{pending.has(p.id) ? '…' : 'Test'}
-									</button>
-								</form>
-							</td>
 						</tr>
 					{:else}
 						<tr>
-							<td class="empty" colspan={data.sites.length + 8}>
+							<td class="empty" colspan={data.sites.length + 7}>
 								Belum ada proxy. Tunggu scheduler atau klik <b>Run sekarang</b>.
 							</td>
 						</tr>
@@ -207,9 +168,7 @@
 	.okc { color: var(--ok); }
 	.of { color: var(--muted); font-size: 16px; }
 
-	.toolbar { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-	.test { display: flex; gap: 8px; flex: 1 1 360px; max-width: 520px; }
-	.test input { flex: 1; }
+	.toolbar { display: flex; flex-wrap: wrap; gap: 12px; justify-content: flex-end; align-items: center; margin-bottom: 12px; }
 	.right { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 
 	.seg { display: inline-flex; padding: 3px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
@@ -230,14 +189,7 @@
 
 	.alert { margin: 0 0 12px; padding: 10px 14px; border-radius: 8px; background: var(--bad-bg); color: var(--bad); }
 
-	.result {
-		display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-bottom: 12px; padding: 12px 14px;
-		background: var(--surface); border: 1px solid var(--ok); border-radius: 10px;
-	}
-	.result.dead { border-color: var(--bad); }
-	.pills { display: flex; flex-wrap: wrap; gap: 8px; }
-	.site { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: 13px; }
-	.note { margin-left: auto; color: var(--muted); font-size: 13px; }
+	.info { margin: 0 0 12px; padding: 10px 14px; border-radius: 8px; background: var(--ok-bg); color: var(--ok); }
 
 	.scroll { overflow: auto; max-height: 70vh; }
 	table { width: 100%; border-collapse: collapse; white-space: nowrap; font-size: 13px; }
@@ -267,10 +219,7 @@
 	.status.up { color: var(--ok); }
 	.status.up .dot { background: var(--ok); }
 
-
 	@media (max-width: 640px) {
 		header { flex-direction: column; }
-		.test { max-width: none; }
-		.note { margin-left: 0; }
 	}
 </style>

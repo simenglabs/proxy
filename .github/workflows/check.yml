@@ -1,0 +1,27 @@
+name: check proxies
+
+on:
+  schedule:
+    - cron: '*/5 * * * *' # GitHub may delay scheduled runs by several minutes
+  workflow_dispatch: # "Run sekarang" button on the monitor page
+
+concurrency:
+  group: check-proxies
+  cancel-in-progress: false # queue at most one extra run, never overlap
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: node scripts/check.ts
+        env:
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}

@@ -96,21 +96,12 @@
 						<tr>
 							<td><code>check_website</code><span class="in">query</span></td>
 							<td class="muted">string</td>
+							<td>Situs yang harus bisa dibuka lewat proxy pada cek terakhir. Hasil diurutkan dari latency tercepat.</td>
 							<td>
-								Situs yang harus bisa dibuka lewat proxy. <b>{data.sites.join(', ')}</b> pakai hasil cek terakhir (cepat).
-								Domain/URL lain, misal <code>google.com</code>, dites langsung saat request (bisa ±10–30 detik, maks 50
-								hasil).
-							</td>
-							<td>
-								<input
-									bind:value={check_website}
-									list="sites"
-									placeholder="instagram / google.com"
-									aria-label="check_website"
-									autocomplete="off"
-									spellcheck="false"
-								/>
-								<datalist id="sites">{#each data.sites as s (s)}<option value={s}></option>{/each}</datalist>
+								<select bind:value={check_website} aria-label="check_website">
+									<option value="">(semua)</option>
+									{#each data.sites as s (s)}<option value={s}>{s}</option>{/each}
+								</select>
 							</td>
 						</tr>
 						<tr>
@@ -127,7 +118,7 @@
 						<tr>
 							<td><code>limit</code><span class="in">query</span></td>
 							<td class="muted">integer</td>
-							<td>Jumlah maksimal baris. Default 100, maks 1000 (maks 50 untuk cek langsung).</td>
+							<td>Jumlah maksimal baris. Default 100, maks 1000.</td>
 							<td><input type="number" min="1" max="1000" bind:value={limit} aria-label="limit" /></td>
 						</tr>
 						<tr>
@@ -183,7 +174,7 @@
 			</div>
 			<div class="resp">
 				<span class="code err">400</span>
-				<p><code>check_website</code> bukan situs/domain yang valid, atau <code>negara</code> bukan kode 2 huruf.</p>
+				<p><code>check_website</code> bukan salah satu situs di atas, atau <code>negara</code> bukan kode 2 huruf.</p>
 			</div>
 		</div>
 	</details>

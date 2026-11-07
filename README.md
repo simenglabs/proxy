@@ -1,33 +1,44 @@
 # menglabs-proxy
 
-Monitor proxy gratis. Tiap 5 menit ambil daftar proxy dari proxyscrape (TH, TW, SG, MY, JP, ID, IN, CN), tes ke Instagram, X, Threads, YouTube, TikTok, simpan yang hidup ke DB, dan sediakan API untuk ambil proxy.
+Monitor proxy gratis. Tiap ±5 menit GitHub Actions ambil daftar proxy dari proxyscrape (TH, TW, SG, MY, JP, ID, IN, CN), tes ke Instagram, X, Threads, YouTube, TikTok, dan simpan yang hidup ke Turso. Cloudflare Workers menyajikan dashboard dan API.
 
-Stack: SvelteKit + libSQL (SQLite lokal atau Turso). Butuh `curl` di server.
+```
+GitHub Actions (cron, curl)  ──write──▶  Turso  ◀──read──  Cloudflare Workers (UI + API)
+scripts/check.ts                                         src/ (SvelteKit)
+```
 
-## Jalankan
+## Jalankan lokal
 
 ```sh
 pnpm install
-pnpm dev          # http://localhost:5173
+pnpm check:proxies   # sekali cek, butuh curl
+pnpm dev             # http://localhost:5173
 ```
 
-Tanpa `.env`, data disimpan di `local.db`. Untuk pakai Turso, salin `.env.example` ke `.env` lalu isi:
+Tanpa `.env`, data disimpan di `local.db`. Untuk pakai Turso, buat `.env`:
 
 ```
 TURSO_DATABASE_URL=libsql://<db>.turso.io
 TURSO_AUTH_TOKEN=<token>
 ```
 
-Production (butuh server yang jalan terus, scheduler pakai `setInterval`):
+## Deploy
 
-```sh
-pnpm build
-node build
-```
+1. **Worker** (sekali login: `pnpm wrangler login`):
+   ```sh
+   pnpm wrangler secret put TURSO_DATABASE_URL
+   pnpm wrangler secret put TURSO_AUTH_TOKEN
+   pnpm wrangler secret put GITHUB_TOKEN   # opsional, untuk tombol "Run sekarang"
+   pnpm run deploy
+   ```
+   `GITHUB_TOKEN` = fine-grained token, repo ini saja, permission **Actions: Read and write**.
+2. **Checker**: di GitHub repo → Settings → Secrets and variables → Actions, isi `TURSO_DATABASE_URL` dan `TURSO_AUTH_TOKEN`. Workflow `.github/workflows/check.yml` jalan otomatis tiap 5 menit, atau manual dari tab Actions.
+
+Kalau pakai Cloudflare Workers Builds (deploy dari git): build command `pnpm build`, deploy command `npx wrangler deploy`.
 
 ## Halaman
 
-- `/` — Monitor: tabel proxy (terbaru di atas), filter aktif, tes manual, tombol run.
+- `/` — Monitor: tabel proxy (terbaru di atas), filter aktif, tombol run.
 - `/docs` — API docs interaktif (coba langsung dari browser).
 
 ## API
@@ -36,7 +47,7 @@ node build
 
 | Param | Keterangan |
 |---|---|
-| `check_website` | `instagram`, `x`, `threads`, `youtube`, `tiktok` = pakai hasil cek terakhir. Domain lain (mis. `google.com`) = dites langsung, maks 50 hasil. |
+| `check_website` | `instagram`, `x`, `threads`, `youtube`, `tiktok`. Hasil cek terakhir, urut latency. |
 | `negara` | Kode ISO-2, mis. `ID`, `SG`. |
 | `limit` | Default 100, maks 1000. |
 | `random` | Acak urutan (rotasi). |
@@ -44,7 +55,7 @@ node build
 
 ```sh
 curl 'http://localhost:5173/api/proxies?check_website=instagram&negara=ID&limit=10'
-curl 'http://localhost:5173/api/proxies?check_website=google.com&format=txt'
+curl 'http://localhost:5173/api/proxies?negara=SG&random=1&format=txt'
 ```
 
 API tanpa auth. Pasang rate limit / API key sebelum dibuka ke publik.
