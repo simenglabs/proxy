@@ -64,10 +64,31 @@ async function checkAndSave(id: string, meta: Meta = {}) {
 await migrate(db);
 const at = Date.now();
 await db.execute({ sql: 'INSERT INTO runs (at) VALUES (?)', args: [at] });
+// "TypeError: fetch failed" hides the real reason (timeout, DNS, ...) in e.cause
+const why = (e: unknown) => {
+	const c = (e as { cause?: { code?: string; message?: string } })?.cause;
+	return c ? `${String(e)} (${c.code ?? c.message})` : String(e);
+};
+
+/** Fresh list from proxyscrape. 3 tries; on failure the run still re-checks stored proxies. */
+async function fetchList(): Promise<{ proxies: ApiProxy[]; error?: string }> {
+	let error = '';
+	for (let i = 0; i < 3; i++) {
+		try {
+			const res = await fetch(LIST_URL, { signal: AbortSignal.timeout(30_000) });
+			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			return { proxies: ((await res.json()) as { proxies: ApiProxy[] }).proxies };
+		} catch (e) {
+			error = `proxyscrape: ${why(e)}`;
+			console.warn(`[list] try ${i + 1}/3 failed: ${error}`);
+			await new Promise((r) => setTimeout(r, 5000));
+		}
+	}
+	return { proxies: [], error };
+}
+
 try {
-	const res = await fetch(LIST_URL, { signal: AbortSignal.timeout(30_000) });
-	if (!res.ok) throw new Error(`proxyscrape HTTP ${res.status}`);
-	const { proxies } = (await res.json()) as { proxies: ApiProxy[] };
+	const { proxies, error: listError } = await fetchList();
 
 	const jobs = new Map<string, Meta>();
 	for (const row of (await db.execute('SELECT id FROM proxies')).rows) jobs.set(String(row.id), {});
@@ -87,11 +108,14 @@ try {
 	await db.batch([
 		{ sql: 'DELETE FROM proxies WHERE alive = 0 AND last_ok < ?', args: [Date.now() - PURGE_AFTER_MS] },
 		{ sql: 'DELETE FROM runs WHERE at < ?', args: [Date.now() - KEEP_RUNS_MS] },
-		{ sql: 'UPDATE runs SET ms = ?, checked = ?, alive = ? WHERE at = ?', args: [Date.now() - at, jobs.size, alive, at] }
+		{
+			sql: 'UPDATE runs SET ms = ?, checked = ?, alive = ?, error = ? WHERE at = ?',
+			args: [Date.now() - at, jobs.size, alive, listError ?? null, at]
+		}
 	]);
 	console.log(`checked ${jobs.size}, alive ${alive}, ${Math.round((Date.now() - at) / 1000)}s`);
 } catch (e) {
-	await db.execute({ sql: 'UPDATE runs SET ms = ?, checked = 0, alive = 0, error = ? WHERE at = ?', args: [Date.now() - at, String(e), at] });
+	await db.execute({ sql: 'UPDATE runs SET ms = ?, checked = 0, alive = 0, error = ? WHERE at = ?', args: [Date.now() - at, why(e), at] });
 	console.error('[proxy cycle]', e);
 	process.exitCode = 1;
 }
