@@ -8,6 +8,7 @@ export const variables = defineEnvVars({
 		schema: (value) => value || 'file:local.db'
 	},
 	TURSO_AUTH_TOKEN: { description: 'Turso auth token', schema: optional },
+	SYNC_TOKEN: { description: 'Bearer token for POST /api/sync (scripts/check.ts). Empty = sync disabled', schema: optional },
 	GITHUB_TOKEN: {
 		description: 'Fine-grained token with Actions: write on GITHUB_REPO. Empty = hide "Run sekarang"',
 		schema: optional

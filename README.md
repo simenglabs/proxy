@@ -1,44 +1,61 @@
 # menglabs-proxy
 
-Monitor proxy gratis. Tiap ±5 menit GitHub Actions ambil daftar proxy dari proxyscrape (TH, TW, SG, MY, JP, ID, IN, CN), tes ke Instagram, X, Threads, YouTube, TikTok, dan simpan yang hidup ke Turso. Cloudflare Workers menyajikan dashboard dan API.
+Monitor proxy gratis. Tiap 5 menit server checker ambil daftar proxy dari proxyscrape (TH, TW, SG, MY, JP, ID, IN, CN), tes ke Instagram, X, Threads, YouTube, TikTok, lalu kirim hasilnya ke `POST /api/sync`. Cloudflare Workers menyimpan ke Turso dan menyajikan dashboard + API.
 
 ```
-GitHub Actions (cron, curl)  ──write──▶  Turso  ◀──read──  Cloudflare Workers (UI + API)
-scripts/check.ts                                         src/ (SvelteKit)
+server LAN (cron, curl)  ──POST /api/sync──▶  Cloudflare Workers  ──▶  Turso
+scripts/check.ts                               src/ (SvelteKit)
 ```
+
+Workers tidak bisa menjalankan `curl`, jadi pengecekan harus di mesin lain.
 
 ## Jalankan lokal
 
 ```sh
 pnpm install
-pnpm check:proxies   # sekali cek, butuh curl
-pnpm dev             # http://localhost:5173
+echo "SYNC_TOKEN=$(openssl rand -hex 32)" > .env
+pnpm dev             # http://localhost:5173, data di local.db
+pnpm check:proxies   # sekali cek ke http://localhost:5173/api/sync, butuh curl
 ```
 
-Tanpa `.env`, data disimpan di `local.db`. Untuk pakai Turso, buat `.env`:
+## Deploy Worker
+
+```sh
+pnpm wrangler login
+pnpm wrangler secret put TURSO_DATABASE_URL
+pnpm wrangler secret put TURSO_AUTH_TOKEN
+pnpm wrangler secret put SYNC_TOKEN      # token yang sama dipakai server checker
+pnpm run deploy
+```
+
+## Server checker
+
+Butuh Node >= 22.18 dan curl. Tidak perlu `npm install`.
+
+```sh
+git clone https://github.com/simenglabs/proxy.git ~/menglabs-proxy
+cd ~/menglabs-proxy
+cat > .env <<'EOF'
+SYNC_URL=https://proxy.nasriadzlani.workers.dev/api/sync
+SYNC_TOKEN=<token>
+EOF
+chmod 600 .env
+node --env-file=.env scripts/check.ts    # tes sekali (±6 menit)
+```
+
+Cron tiap 5 menit (`crontab -e`), `flock` mencegah run bertumpuk:
 
 ```
-TURSO_DATABASE_URL=libsql://<db>.turso.io
-TURSO_AUTH_TOKEN=<token>
+*/5 * * * * cd ~/menglabs-proxy && flock -n /tmp/proxy-check.lock /usr/bin/node --env-file=.env scripts/check.ts >> ~/proxy-check.log 2>&1
 ```
 
-## Deploy
+Ganti `/usr/bin/node` dengan hasil `which node`. Update kode: `git pull`.
 
-1. **Worker** (sekali login: `pnpm wrangler login`):
-   ```sh
-   pnpm wrangler secret put TURSO_DATABASE_URL
-   pnpm wrangler secret put TURSO_AUTH_TOKEN
-   pnpm wrangler secret put GITHUB_TOKEN   # opsional, untuk tombol "Run sekarang"
-   pnpm run deploy
-   ```
-   `GITHUB_TOKEN` = fine-grained token, repo ini saja, permission **Actions: Read and write**.
-2. **Checker**: di GitHub repo → Settings → Secrets and variables → Actions, isi `TURSO_DATABASE_URL` dan `TURSO_AUTH_TOKEN`. Workflow `.github/workflows/check.yml` jalan otomatis tiap 5 menit, atau manual dari tab Actions.
-
-Kalau pakai Cloudflare Workers Builds (deploy dari git): build command `pnpm build`, deploy command `npx wrangler deploy`.
+`.github/workflows/check.yml` cadangan manual (tab Actions → Run workflow), butuh secret `SYNC_URL` dan `SYNC_TOKEN` di GitHub.
 
 ## Halaman
 
-- `/` — Monitor: tabel proxy (terbaru di atas), filter aktif, tombol run.
+- `/` — Monitor: tabel proxy (terbaru di atas), filter aktif.
 - `/docs` — API docs interaktif (coba langsung dari browser).
 
 ## API
