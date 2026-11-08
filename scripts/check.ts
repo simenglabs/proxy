@@ -41,6 +41,14 @@ const SYNC_URL = process.env.SYNC_URL || 'http://localhost:5173/api/sync';
 const SYNC_TOKEN = process.env.SYNC_TOKEN;
 if (!SYNC_TOKEN) throw new Error('SYNC_TOKEN env is required');
 
+// TikTok answers curl with a 200 WAF challenge page, so a curl pass is only a pre-filter.
+// Proxies that pass it are confirmed in a real browser (browserless) that must render @tiktok's profile data.
+// Unset BROWSERLESS_URL = trust curl for TikTok too.
+const BROWSERLESS_URL = process.env.BROWSERLESS_URL; // e.g. http://localhost:3000
+const BROWSERLESS_TOKEN = process.env.BROWSERLESS_TOKEN ?? '';
+const BROWSERLESS_CONCURRENCY = Number(process.env.BROWSERLESS_CONCURRENCY) || 2; // match browserless maxConcurrent
+const TIKTOK_URL = 'https://www.tiktok.com/@tiktok';
+
 type Meta = { country?: string; anonymity?: string };
 
 // "TypeError: fetch failed" hides the real reason (timeout, DNS, ...) in e.cause
@@ -73,6 +81,42 @@ function hit(id: string, url: string): Promise<number | null> {
 			resolve(code >= 200 && code < 400 ? Math.round(time * 1000) : null);
 		})
 	);
+}
+
+// ponytail: tiny semaphore so we never exceed browserless capacity (it rejects past maxConcurrent + maxQueued)
+let free = BROWSERLESS_CONCURRENCY;
+const waiting: (() => void)[] = [];
+async function withSlot<T>(fn: () => Promise<T>): Promise<T> {
+	while (free === 0) await new Promise<void>((r) => waiting.push(r));
+	free--;
+	try {
+		return await fn();
+	} finally {
+		free++;
+		waiting.shift()?.();
+	}
+}
+
+/** Load @tiktok in Chrome through the proxy. ms (incl. browser start) if the profile data rendered, else null. */
+async function tiktokInBrowser(id: string): Promise<number | null> {
+	const launch = encodeURIComponent(JSON.stringify({ args: [`--proxy-server=${id}`] }));
+	const t = performance.now();
+	try {
+		const res = await fetch(`${BROWSERLESS_URL}/content?token=${BROWSERLESS_TOKEN}&launch=${launch}`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({
+				url: TIKTOK_URL,
+				gotoOptions: { waitUntil: 'domcontentloaded', timeout: 20_000 },
+				waitForSelector: { selector: '#__UNIVERSAL_DATA_FOR_REHYDRATION__', timeout: 15_000 }
+			}),
+			signal: AbortSignal.timeout(45_000)
+		});
+		if (!res.ok) return null;
+		return (await res.text()).includes('"uniqueId":"tiktok"') ? Math.round(performance.now() - t) : null;
+	} catch {
+		return null;
+	}
 }
 
 /** One source, 3 tries. A failed source is reported but never stops the run. */
@@ -111,6 +155,7 @@ try {
 
 	const queue = [...jobs];
 	const results: { id: string; country?: string; anonymity?: string; sites: Sites }[] = [];
+	const browserChecks: Promise<void>[] = []; // run beside curl so the 40 curl workers never wait on the browser
 	await Promise.all(
 		Array.from({ length: CONCURRENCY }, async () => {
 			for (let job = queue.pop(); job; job = queue.pop()) {
@@ -118,10 +163,14 @@ try {
 				const sites: Sites = Object.fromEntries(
 					await Promise.all(Object.entries(SITES).map(async ([name, url]) => [name, await hit(id, url)]))
 				);
+				if (BROWSERLESS_URL && sites.tiktok != null)
+					browserChecks.push(withSlot(() => tiktokInBrowser(id)).then((ms) => void (sites.tiktok = ms)));
 				results.push({ id, ...meta, sites });
 			}
 		})
 	);
+	console.log(`[tiktok] confirming ${browserChecks.length} proxies in browser`);
+	await Promise.all(browserChecks);
 
 	const res = await sync<{ checked: number; alive: number }>({ at, ms: Date.now() - at, error, results });
 	console.log(`checked ${res.checked}, alive ${res.alive}, ${Math.round((Date.now() - at) / 1000)}s`);

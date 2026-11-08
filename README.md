@@ -38,6 +38,9 @@ cd ~/menglabs-proxy
 cat > .env <<'EOF'
 SYNC_URL=https://proxy.nasriadzlani.workers.dev/api/sync
 SYNC_TOKEN=<token>
+# opsional: TikTok dicek ulang di browser asli (curl cuma dapat halaman WAF)
+BROWSERLESS_URL=http://localhost:3000
+BROWSERLESS_TOKEN=<token browserless>
 EOF
 chmod 600 .env
 node --env-file=.env scripts/check.ts    # tes sekali (±6 menit)
