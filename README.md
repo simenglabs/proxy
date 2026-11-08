@@ -1,6 +1,6 @@
 # menglabs-proxy
 
-Monitor proxy gratis. Tiap 5 menit server checker ambil daftar proxy dari proxyscrape (TH, TW, SG, MY, JP, ID, IN, CN), tes ke Instagram, X, Threads, YouTube, TikTok, lalu kirim hasilnya ke `POST /api/sync`. Cloudflare Workers menyimpan ke Turso dan menyajikan dashboard + API.
+Monitor proxy gratis. Tiap 5 menit server checker ambil daftar proxy dari proxyscrape (TH, TW, SG, MY, JP, ID, IN, CN) dan proxifly (ID), tes ke Instagram, X, Threads, YouTube, TikTok, lalu kirim hasilnya ke `POST /api/sync`. Cloudflare Workers menyimpan ke Turso dan menyajikan dashboard + API.
 
 ```
 server LAN (cron, curl)  ──POST /api/sync──▶  Cloudflare Workers  ──▶  Turso
